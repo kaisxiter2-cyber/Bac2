@@ -1,10 +1,13 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import App from './App.tsx';
+import AdminTokensPage from '@/pages/AdminTokensPage';
+import App from '@/App';
 import './index.css';
+
+const isAdminPage = window.location.pathname.replace(/\/+$/, '') === '/admin';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    {isAdminPage ? <AdminTokensPage /> : <App />}
   </StrictMode>
 );

@@ -3,7 +3,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey, X-Api-Key",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey, X-Api-Key, X-Admin-Code",
 };
 
 const json = (body: unknown, status = 200) =>
@@ -13,6 +13,7 @@ const json = (body: unknown, status = 200) =>
   });
 
 const SUBJECTS = ["arabic", "philosophy", "history", "islamic", "french", "english"];
+const ADMIN_KEY_NAME = "site assistant";
 const KINDS = ["درس", "ملخص", "تمرين"];
 const BUCKET = "lesson-files";
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
@@ -55,6 +56,60 @@ async function isAuthorized(req: Request) {
     .maybeSingle();
   if (error) throw error;
   return data !== null;
+}
+
+async function isAdmin(req: Request) {
+  const code = req.headers.get("x-admin-code");
+  if (!code) return false;
+  const { data, error } = await supabase
+    .from("api_keys")
+    .select("id")
+    .eq("key_hash", await sha256Hex(code))
+    .eq("name", ADMIN_KEY_NAME)
+    .is("revoked_at", null)
+    .maybeSingle();
+  if (error) throw error;
+  return data !== null;
+}
+
+async function listTokens() {
+  const { data, error } = await supabase
+    .from("api_keys")
+    .select("id, name, created_at, revoked_at")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return json({ tokens: data });
+}
+
+async function createToken(req: Request) {
+  const body = await req.json().catch(() => null);
+  const name = typeof body?.name === "string" ? body.name.trim() : "";
+  if (name.length < 1 || name.length > 80) return json({ error: "name must be 1-80 characters" }, 400);
+
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  const token = `bp_${[...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+
+  const { data, error } = await supabase
+    .from("api_keys")
+    .insert({ name, key_hash: await sha256Hex(token) })
+    .select("id, name, created_at")
+    .single();
+  if (error) throw error;
+
+  return json({ token, record: data }, 201);
+}
+
+async function revokeToken(id: string) {
+  const { data, error } = await supabase
+    .from("api_keys")
+    .update({ revoked_at: new Date().toISOString() })
+    .eq("id", id)
+    .is("revoked_at", null)
+    .select("id")
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return json({ error: "Token not found or already revoked" }, 404);
+  return json({ revoked: id });
 }
 
 function validateLesson(body: unknown): { ok: true; value: LessonInput } | { ok: false; error: string } {
@@ -188,11 +243,25 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    const segments = new URL(req.url).pathname.split("/").filter(Boolean);
+
+    if (segments.includes("tokens")) {
+      if (!(await isAdmin(req))) return json({ error: "Invalid admin code" }, 401);
+      const tokenIndex = segments.indexOf("tokens");
+      const tokenId = segments[tokenIndex + 1];
+      if (!tokenId) {
+        if (req.method === "GET") return await listTokens();
+        if (req.method === "POST") return await createToken(req);
+      } else if (req.method === "DELETE") {
+        return await revokeToken(tokenId);
+      }
+      return json({ error: "Method or route not supported" }, 405);
+    }
+
     if (!(await isAuthorized(req))) {
       return json({ error: "Invalid or missing API key" }, 401);
     }
 
-    const segments = new URL(req.url).pathname.split("/").filter(Boolean);
     const start = segments.indexOf("lessons");
     const [id, action] = start >= 0 ? segments.slice(start + 1) : [];
 
