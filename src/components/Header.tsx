@@ -1,4 +1,4 @@
-import { GraduationCap } from 'lucide-react';
+import { GraduationCap, KeyRound } from 'lucide-react';
 
 export default function Header() {
   return (
@@ -11,6 +11,13 @@ export default function Header() {
           <span className="text-lg font-extrabold text-slate-900">
             باك آداب <span className="text-rose-600">بلس</span>
           </span>
+        </a>
+        <a
+          href="/admin"
+          className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:border-rose-300 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
+        >
+          <KeyRound className="h-4 w-4" />
+          <span>الأدمن</span>
         </a>
       </div>
     </header>
